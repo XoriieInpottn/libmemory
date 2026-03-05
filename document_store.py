@@ -112,7 +112,7 @@ class DocumentStore:
 
     def _prepare_documents(
         self, documents: list[KnowledgeDocument]
-    ) -> tuple[list[dict[str, Any]], list[str]]:
+    ) -> list[dict[str, Any]]:
         embeddings = self._embed(
             documents[0].text if len(documents) == 1 else [doc.text for doc in documents]
         )
@@ -120,10 +120,8 @@ class DocumentStore:
             embeddings = [embeddings]  # type: ignore[arg-type]
 
         payloads: list[dict[str, Any]] = []
-        document_ids: list[str] = []
         for idx, doc in enumerate(documents):
             document_id = doc.id or uuid4().hex
-            document_ids.append(document_id)
             payloads.append(
                 {
                     "id": document_id,
@@ -134,19 +132,52 @@ class DocumentStore:
                     "vector": embeddings[idx],
                 }
             )
-        return payloads, document_ids
+        return payloads
+
+    def _add_documents(
+        self, 
+        document: KnowledgeDocument | list[KnowledgeDocument], 
+        upsert: bool = False
+    ) -> str | list[str]:
+        """Internal helper to add or upsert documents."""
+        is_single = isinstance(document, KnowledgeDocument)
+        docs_list = [document] if is_single else document
+
+        if upsert:
+            ids_to_delete = [doc.id for doc in docs_list if doc.id]
+            if ids_to_delete:
+                escaped_ids = [f"'{_escape_sql_literal(id)}'" for id in ids_to_delete]
+                self.table.delete(f"id IN ({', '.join(escaped_ids)})")
+            
+        payloads = self._prepare_documents(docs_list)
+        self.table.add(payloads)
+        
+        document_ids = [p["id"] for p in payloads]
+        return document_ids[0] if is_single else document_ids
 
     def insert_document(
         self, document: KnowledgeDocument | list[KnowledgeDocument]
     ) -> str | list[str]:
-        if isinstance(document, KnowledgeDocument):
-            payloads, document_ids = self._prepare_documents([document])
-            self.table.add(payloads)
-            return document_ids[0]
+        """Purely insert new document(s). 
+        
+        If a document ID is provided and already exists, this might result in 
+        duplicate IDs depending on the underlying storage behavior.
+        """
+        return self._add_documents(document, upsert=False)
 
-        payloads, document_ids = self._prepare_documents(document)
-        self.table.add(payloads)
-        return document_ids
+    def upsert_document(
+        self, document: KnowledgeDocument | list[KnowledgeDocument]
+    ) -> str | list[str]:
+        """Insert or update document(s).
+        
+        If a document ID is provided and already exists, the old document 
+        will be deleted before inserting the new one.
+        """
+        return self._add_documents(document, upsert=True)
+
+    def delete_document(self, document_id: str) -> None:
+        """Delete a document by its ID."""
+        self.table.delete(f"id = '{_escape_sql_literal(document_id)}'")
 
     def search(
         self,
@@ -309,15 +340,24 @@ class DocumentStore:
 
 
 def test():
-    # 使用 LLMConfig 模式
-    config = LLMConfig(
-        base_url="https://api.zhizengzeng.com/v1",
-        api_key="zk-08507a246a7f1fc844185def5ae9ef2b",
-        model="text-embedding-3-small",
-    )
+    # 从配置文件加载 LLMConfig（避免在代码中硬编码敏感信息）
+    config_path = "./config.json"
+    if not os.path.exists(config_path):
+        print(f"未找到配置文件 '{config_path}'，请确保该文件存在。")
+        return
+
+    with open(config_path, "r", encoding="utf-8") as f:
+        cfg = json.load(f)
+
+    # LLMConfig 是 Pydantic 模型，可以使用 model_validate 进行验证加载
+    try:
+        config = LLMConfig.model_validate(cfg)
+    except (AttributeError, ValueError):
+        # 兼容旧版本 Pydantic 或特定实现
+        config = LLMConfig(**cfg)
 
     # 初始化 DocumentStore
-    db_path = "./test_knowledge_db"
+    db_path = "./data/document_db"
     
     # 判断数据库是否已存在，决定是否需要初始化文档
     is_new_db = not os.path.exists(db_path)
@@ -350,6 +390,23 @@ def test():
         batch_ids = store.insert_document(docs_batch)
         for doc_id, doc in zip(batch_ids, docs_batch):
             print(f"已插入: {doc_id} -> {doc.text[:20]}...")
+
+        # 测试更新 (upsert)
+        print("\n=== 测试更新 (upsert) ===")
+        if batch_ids:
+            target_id = batch_ids[0]
+            update_doc = KnowledgeDocument(
+                id=target_id,
+                text="LanceDB 是一个极其高性能的嵌入式向量数据库，它真的很快！",
+                type="database",
+                metadata={"source": "upsert_test"}
+            )
+            upserted_id = store.upsert_document(update_doc)
+            print(f"已更新文档 ID: {upserted_id}")
+            
+            # 验证更新
+            check_doc = store.get_document(target_id)
+            print(f"验证更新后的内容: {check_doc.text}")
     else:
         print("=== 数据库已存在，跳过插入步骤 ===")
 

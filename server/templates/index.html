@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document Store - 文档管理</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f8f9fa;
+        }
+        h1 {
+            color: #2c3e50;
+            border-bottom: 2px solid #eee;
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+        }
+        .search-container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .search-form {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 15px;
+            align-items: end;
+        }
+        .search-form .full-width {
+            grid-column: 1 / -1;
+        }
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        .form-group label {
+            font-size: 0.9em;
+            font-weight: 600;
+            color: #666;
+        }
+        input, select {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .btn {
+            padding: 8px 16px;
+            background-color: #3498db;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            text-align: center;
+            text-decoration: none;
+            font-size: 14px;
+            transition: background 0.2s;
+        }
+        .btn:hover { background-color: #2980b9; }
+        .btn-secondary { background-color: #95a5a6; }
+        .btn-secondary:hover { background-color: #7f8c8d; }
+        .btn-danger { background-color: #e74c3c; }
+        .btn-danger:hover { background-color: #c0392b; }
+        .btn-success { background-color: #2ecc71; }
+        .btn-success:hover { background-color: #27ae60; }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        th, td {
+            padding: 12px 15px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+        th { background-color: #f1f4f6; color: #666; font-weight: 600; }
+        tr:hover { background-color: #f9fbff; }
+        .doc-id { font-family: monospace; color: #e67e22; font-size: 0.85em; }
+        .doc-type {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            background-color: #ebf5fb;
+            color: #2980b9;
+            font-size: 0.8em;
+            font-weight: 600;
+        }
+        .doc-text-cell { max-width: 500px; }
+        .doc-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5);
+            align-items: center; justify-content: center;
+            z-index: 1000;
+        }
+        .modal-content {
+            background: white;
+            padding: 25px;
+            border-radius: 8px;
+            width: 700px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+        }
+        .modal-content textarea { width: 100%; height: 200px; margin-top: 10px; padding: 10px; box-sizing: border-box; }
+        
+        .pagination { margin-top: 20px; display: flex; gap: 10px; align-items: center; }
+        .info-badge { font-size: 0.85em; color: #666; background: #eee; padding: 4px 10px; border-radius: 20px; }
+        .btn.disabled { background-color: #bdc3c7; pointer-events: none; }
+    </style>
+</head>
+<body>
+    <h1>📚 Document Store 管理后台</h1>
+    
+    <div class="search-container">
+        <form action="/" method="get" class="search-form">
+            <div class="form-group full-width">
+                <label>语义搜索 / 文本查询</label>
+                <input type="text" name="query" placeholder="输入搜索内容，留空则进入列表模式..." value="{{ query }}">
+            </div>
+            
+            <div class="form-group">
+                <label>类型过滤 (doc_type)</label>
+                <input type="text" name="doc_type" placeholder="例如: tech" value="{{ doc_type }}">
+            </div>
+
+            <div class="form-group">
+                <label>Top K (检索数量)</label>
+                <input type="number" name="top_k" value="{{ top_k }}" min="1" max="100">
+            </div>
+
+            <div class="form-group">
+                <label>向量权重 (<span id="weight-val">{{ vector_weight }}</span>)</label>
+                <input type="range" name="vector_weight" min="0" max="1" step="0.1" value="{{ vector_weight }}" 
+                       oninput="document.getElementById('weight-val').innerText = this.value">
+            </div>
+
+            <div class="full-width" style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 10px;">
+                <a href="/" class="btn btn-secondary">重置浏览</a>
+                <button type="submit" class="btn">立即执行搜索</button>
+            </div>
+        </form>
+    </div>
+
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+        <span class="info-badge">
+            {% if query %}
+                搜索模式 (Top {{ top_k }})
+            {% else %}
+                列表浏览模式 (Skip {{ skip }}, Limit {{ limit }})
+            {% endif %}
+            | 当前展示 {{ documents|length }} 条记录
+        </span>
+    </div>
+
+    <table>
+        <thead>
+            <tr>
+                <th width="150">ID</th>
+                <th width="100">类型</th>
+                <th>内容预览</th>
+                <th width="150">操作</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for doc in documents %}
+            <tr id="row-{{ doc.id }}">
+                <td><span class="doc-id">{{ doc.id }}</span></td>
+                <td><span class="doc-type">{{ doc.type }}</span></td>
+                <td class="doc-text-cell"><div class="doc-text" title="{{ doc.text }}">{{ doc.text }}</div></td>
+                <td>
+                    <div style="display: flex; gap: 5px;">
+                        <button class="btn" style="padding: 4px 8px;" onclick="openEditModal('{{ doc.id }}', '{{ doc.type|e }}', '{{ doc.text|e }}')">编辑</button>
+                        <button class="btn btn-danger" style="padding: 4px 8px;" onclick="deleteDoc('{{ doc.id }}')">删除</button>
+                    </div>
+                </td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="4" style="text-align: center; color: #999; padding: 40px;">未发现匹配文档</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    {% if not query %}
+    <div class="pagination">
+        {% if skip > 0 %}
+            <a href="/?skip={{ [skip - limit, 0]|max }}&limit={{ limit }}&doc_type={{ doc_type }}" class="btn btn-secondary">上一页</a>
+        {% else %}
+            <span class="btn btn-secondary disabled">上一页</span>
+        {% endif %}
+        
+        <span style="color: #666; font-size: 0.9em;">(跳过: {{ skip }})</span>
+
+        {% if documents|length == limit %}
+            <a href="/?skip={{ skip + limit }}&limit={{ limit }}&doc_type={{ doc_type }}" class="btn btn-secondary">下一页</a>
+        {% else %}
+            <span class="btn btn-secondary disabled">下一页</span>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <!-- 编辑模态框 -->
+    <div id="editModal" class="modal">
+        <div class="modal-content">
+            <h3 style="margin-top:0">编辑文档</h3>
+            <p style="font-size: 0.8em; color: #999;">ID: <span id="edit-id-display"></span></p>
+            <input type="hidden" id="edit-id">
+            <div class="form-group" style="margin-top:15px">
+                <label>类型 (Type)</label>
+                <input type="text" id="edit-type">
+            </div>
+            <div class="form-group" style="margin-top:15px">
+                <label>文本内容 (Text)</label>
+                <textarea id="edit-text"></textarea>
+            </div>
+            <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
+                <button class="btn btn-secondary" onclick="closeModal()">取消</button>
+                <button class="btn btn-success" onclick="saveDoc()">保存修改 (保留原ID)</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function openEditModal(id, type, text) {
+            document.getElementById('edit-id').value = id;
+            document.getElementById('edit-id-display').innerText = id;
+            document.getElementById('edit-type').value = type;
+            document.getElementById('edit-text').value = text;
+            document.getElementById('editModal').style.display = 'flex';
+        }
+
+        function closeModal() {
+            document.getElementById('editModal').style.display = 'none';
+        }
+
+        async function saveDoc() {
+            const id = document.getElementById('edit-id').value;
+            const type = document.getElementById('edit-type').value;
+            const text = document.getElementById('edit-text').value;
+
+            const response = await fetch(`/update/${id}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ type, text })
+            });
+
+            if (response.ok) {
+                location.reload();
+            } else {
+                alert('保存失败');
+            }
+        }
+
+        async function deleteDoc(id) {
+            if (!confirm(`确定要删除文档 ${id} 吗？`)) return;
+
+            const response = await fetch(`/delete/${id}`, { method: 'POST' });
+            if (response.ok) {
+                document.getElementById(`row-${id}`).remove();
+            } else {
+                alert('删除失败');
+            }
+        }
+
+        window.onclick = function(event) {
+            const modal = document.getElementById('editModal');
+            if (event.target == modal) closeModal();
+        }
+    </script>
+</body>
+</html>

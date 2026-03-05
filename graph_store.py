@@ -267,18 +267,21 @@ def test():
     """Simple manual test for GraphStore.
 
     This test:
-    1. Creates a fresh Kuzu database in `./test_kuzu_graph_db`.
+    1. Creates a fresh Kuzu database in `./data/graph_db`.
     2. Inserts a small graph with node/edge dedup.
     3. Runs several retrieval queries and prints the results.
     """
     import os
     import shutil
 
-    db_path = "./test_kuzu_graph_db"
+    db_path = "./data/graph_db"
 
-    # Start from a clean database directory for repeatable testing.
+    # Start from a clean database directory/file for repeatable testing.
     if os.path.exists(db_path):
-        shutil.rmtree(db_path)
+        if os.path.isdir(db_path):
+            shutil.rmtree(db_path)
+        else:
+            os.remove(db_path)
 
     store = GraphStore(db_path=db_path)
 
