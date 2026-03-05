@@ -48,7 +48,8 @@ class GraphStore:
     """
 
     def __init__(self, db_path: str):
-        """
+        """Initialize the GraphStore.
+
         Args:
             db_path: Directory path for the Kuzu database.
         """
@@ -57,7 +58,7 @@ class GraphStore:
         self._ensure_schema()
 
     def _ensure_schema(self) -> None:
-        """Create node/edge tables if they do not already exist."""
+        """Ensure the necessary node and relationship tables exist in the graph database."""
         # Create node table: stores id and type (same semantics as KnowledgeDocument).
         try:
             self.conn.execute(
@@ -91,9 +92,13 @@ class GraphStore:
     # ------------------------------------------------------------------
 
     def insert_node(self, node_id: str, node_type: str) -> None:
-        """Insert a node with deduplication.
+        """Insert a node into the graph with deduplication.
 
         If the node already exists, its type will not be modified.
+
+        Args:
+            node_id: Unique identifier for the node.
+            node_type: The business category of the node.
         """
         if not node_id:
             raise ValueError("node_id cannot be empty")
@@ -112,10 +117,14 @@ class GraphStore:
         )
 
     def insert_edge(self, src_id: str, dst_id: str, rel_type: str) -> None:
-        """Insert an edge with deduplication.
+        """Insert a directed edge into the graph with deduplication.
 
-        The edge is directed: src_id -> dst_id with the given relation type.
-        Nodes will be auto-created if they do not exist yet (with empty type).
+        Nodes will be automatically created with an empty type if they do not exist.
+
+        Args:
+            src_id: ID of the source node.
+            dst_id: ID of the destination node.
+            rel_type: Type of the relationship.
         """
         if not src_id or not dst_id:
             raise ValueError("src_id and dst_id cannot be empty")
@@ -157,19 +166,17 @@ class GraphStore:
         node_type: Optional[str] = None,
         rel_type: Optional[str] = None,
     ) -> List[GraphNode]:
-        """Retrieve neighbor nodes up to a given hop distance.
+        """Retrieve neighbor nodes up to a specified hop distance using BFS.
 
         Args:
-            node_id: Start node ID.
-            max_hops: Maximum hop distance (>= 1).
-            node_type: Optional node type filter. If set, only nodes with this
-                type will be returned (the start node is always included).
-            rel_type: Optional relation type filter. If set, only edges whose
-                `relType` equals this value are followed.
+            node_id: The ID of the starting node.
+            max_hops: Maximum number of hops from the start node (must be >= 0).
+            node_type: Optional node type filter. Only nodes matching this type are
+                returned (the start node is always included regardless of type).
+            rel_type: Optional relationship type filter. Only edges of this type are followed.
 
         Returns:
-            A list of `GraphNode` objects, including the start node with
-            distance 0. Each node appears at most once (shortest distance).
+            A list of GraphNode objects, sorted by distance and then by ID.
         """
         if not node_id:
             raise ValueError("node_id cannot be empty")

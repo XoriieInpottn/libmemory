@@ -79,6 +79,16 @@ class DocumentStore:
         normalize_embeddings: bool = True,
         ensure_fts_index: bool = True,
     ):
+        """Initialize the DocumentStore.
+
+        Args:
+            db_path: Path to the LanceDB database directory.
+            embedding_service_url: URL or LLMConfig for the embedding service.
+            table_name: Name of the table to use for document storage.
+            embedding_dims: Dimension of the embeddings. Defaults to 1536.
+            normalize_embeddings: Whether to normalize embeddings. Defaults to True.
+            ensure_fts_index: Whether to ensure a Full-Text Search index exists. Defaults to True.
+        """
         self.db_path = db_path
         self.table_name = table_name
         self.embedding_dims = embedding_dims
@@ -159,25 +169,38 @@ class DocumentStore:
     def insert_document(
         self, document: KnowledgeDocument | list[KnowledgeDocument]
     ) -> str | list[str]:
-        """Purely insert new document(s). 
-        
-        If a document ID is provided and already exists, this might result in 
-        duplicate IDs depending on the underlying storage behavior.
+        """Insert one or more new documents into the store.
+
+        Args:
+            document: A single KnowledgeDocument or a list of them.
+
+        Returns:
+            The ID of the inserted document, or a list of IDs if multiple documents were passed.
         """
         return self._add_documents(document, upsert=False)
 
     def upsert_document(
         self, document: KnowledgeDocument | list[KnowledgeDocument]
     ) -> str | list[str]:
-        """Insert or update document(s).
-        
-        If a document ID is provided and already exists, the old document 
-        will be deleted before inserting the new one.
+        """Insert or update one or more documents.
+
+        If a document ID is provided and already exists, the old document will be 
+        deleted before inserting the new one.
+
+        Args:
+            document: A single KnowledgeDocument or a list of them.
+
+        Returns:
+            The ID of the upserted document, or a list of IDs if multiple documents were passed.
         """
         return self._add_documents(document, upsert=True)
 
     def delete_document(self, document_id: str) -> None:
-        """Delete a document by its ID."""
+        """Delete a document by its unique identifier.
+
+        Args:
+            document_id: The ID of the document to delete.
+        """
         self.table.delete(f"id = '{_escape_sql_literal(document_id)}'")
 
     def search(
@@ -188,6 +211,21 @@ class DocumentStore:
         doc_type: str | None = None,
         where: str | None = None,
     ) -> list[KnowledgeDocument]:
+        """Search for documents using vector, full-text, or hybrid search.
+
+        Args:
+            query: The search text query.
+            top_k: Maximum number of results to return. Defaults to 5.
+            vector_weight: The weight assigned to vector search in hybrid mode (0.0 to 1.0).
+                - 1.0: Pure vector (semantic) search.
+                - 0.0: Pure Full-Text Search (FTS).
+                - (0, 1): Hybrid search combining both. Defaults to 0.7.
+            doc_type: Optional filter to restrict results to a specific document type.
+            where: Optional additional SQL-like filter string.
+
+        Returns:
+            A list of KnowledgeDocument instances matching the query and filters.
+        """
         if vector_weight >= 1.0:
             # 纯向量检索
             query_vector = self._embed(query)

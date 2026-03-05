@@ -13,11 +13,25 @@ from openai import OpenAI
 
 
 class EmbeddingAdapter:
+    """Adapter for various embedding services, supporting both local API clients and OpenAI."""
 
     def __init__(self, url: str | LLMConfig):
+        """Initialize the EmbeddingAdapter.
+
+        Args:
+            url: The URL string for a local embedding service or an LLMConfig for OpenAI.
+        """
         self.url = url
 
     def embedding(self, request: DenseEmbeddingRequest) -> DenseEmbeddingResponse:
+        """Generate embeddings for the given text request.
+
+        Args:
+            request: The request containing text to embed and normalization settings.
+
+        Returns:
+            A DenseEmbeddingResponse containing the generated embeddings as an NDArray.
+        """
         if isinstance(self.url, str):
             with APIClient(self.url) as client:
                 return DenseEmbeddingResponse.model_validate(client.post(request))
