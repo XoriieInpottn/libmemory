@@ -17,7 +17,6 @@ from lancedb.rerankers import LinearCombinationReranker
 from pydantic import BaseModel, Field, field_validator
 
 DEFAULT_TABLE_NAME = "knowledge"
-DEFAULT_EMBEDDING_DIMS = 1536
 
 
 def _escape_sql_literal(value: str) -> str:
@@ -58,15 +57,6 @@ class KnowledgeDocument(BaseModel):
         return value
 
 
-class KnowledgeTableDocument(LanceModel):
-    id: str
-    text: str
-    type: str
-    metadata: str
-    created_at: float
-    vector: Vector(DEFAULT_EMBEDDING_DIMS)
-
-
 class DocumentStore:
     """Knowledge/document storage and semantic retrieval based on LanceDB + embedding service."""
 
@@ -74,8 +64,8 @@ class DocumentStore:
         self,
         db_path: str,
         embedding_service_url: str | LLMConfig,
+        embedding_dims: int,
         table_name: str = DEFAULT_TABLE_NAME,
-        embedding_dims: int = DEFAULT_EMBEDDING_DIMS,
         normalize_embeddings: bool = True,
         ensure_fts_index: bool = True,
     ):
@@ -84,8 +74,8 @@ class DocumentStore:
         Args:
             db_path: Path to the LanceDB database directory.
             embedding_service_url: URL or LLMConfig for the embedding service.
-            table_name: Name of the table to use for document storage.
-            embedding_dims: Dimension of the embeddings. Defaults to 1536.
+            embedding_dims: Dimension of the embeddings (required).
+            table_name: Name of the table to use for document storage. Defaults to "knowledge".
             normalize_embeddings: Whether to normalize embeddings. Defaults to True.
             ensure_fts_index: Whether to ensure a Full-Text Search index exists. Defaults to True.
         """
@@ -97,16 +87,45 @@ class DocumentStore:
         self.embedding_adapter = EmbeddingAdapter(embedding_service_url)
 
         self.db = lancedb.connect(self.db_path)
-        self.table = self._open_or_create_table()
+        schema = self._build_schema(self.embedding_dims)
+        self.table = self._open_or_create_table(schema)
 
         if ensure_fts_index:
             self._ensure_fts_index()
 
-    def _open_or_create_table(self):
+    @staticmethod
+    def _build_schema(embedding_dims: int):
+        """Dynamically build the Pydantic-based LanceModel schema with correct vector dimensions.
+
+        Args:
+            embedding_dims: The number of dimensions for the vector field.
+
+        Returns:
+            A KnowledgeTableDocument class (LanceModel).
+        """
+        class KnowledgeTableDocument(LanceModel):
+            id: str
+            text: str
+            type: str
+            metadata: str
+            created_at: float
+            vector: Vector(embedding_dims)
+
+        return KnowledgeTableDocument
+
+    def _open_or_create_table(self, schema):
+        """Open an existing table or create a new one with the provided schema.
+
+        Args:
+            schema: The LanceModel class to use as the table schema.
+
+        Returns:
+            A LanceDB Table object.
+        """
         try:
             return self.db.open_table(self.table_name)
         except Exception:
-            return self.db.create_table(self.table_name, schema=KnowledgeTableDocument)
+            return self.db.create_table(self.table_name, schema=schema)
 
     def _ensure_fts_index(self) -> None:
         try:
@@ -404,6 +423,7 @@ def test():
     store = DocumentStore(
         db_path=db_path,
         embedding_service_url=config,
+        embedding_dims=1536,
         table_name="test_knowledge"
     )
 
