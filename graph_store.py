@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Dict, List, Optional, Set, Tuple
+
+from pydantic import BaseModel, Field
 
 
 try:
@@ -15,13 +16,25 @@ except ImportError as e:  # pragma: no cover - runtime guard
     ) from e
 
 
-@dataclass
-class GraphNode:
+class GraphNode(BaseModel):
     """Simple graph node model used by GraphStore."""
 
-    id: str
-    type: str
-    distance: int
+    id: str = Field(
+        default="",
+        title="Node ID",
+        description="Unique identifier for the node.",
+    )
+    type: str = Field(
+        default="",
+        title="Node type",
+        description="The business category of the node.",
+    )
+    distance: int = Field(
+        default=0,
+        ge=0,
+        title="Node distance",
+        description="Shortest hop distance from the query node.",
+    )
 
 
 class GraphStore:

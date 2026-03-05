@@ -58,6 +58,15 @@ class KnowledgeDocument(BaseModel):
         return value
 
 
+class KnowledgeTableDocument(LanceModel):
+    id: str
+    text: str
+    type: str
+    metadata: str
+    created_at: float
+    vector: Vector(DEFAULT_EMBEDDING_DIMS)
+
+
 class DocumentStore:
     """Knowledge/document storage and semantic retrieval based on LanceDB + embedding service."""
 
@@ -78,24 +87,16 @@ class DocumentStore:
         self.embedding_adapter = EmbeddingAdapter(embedding_service_url)
 
         self.db = lancedb.connect(self.db_path)
-        schema = self._build_schema(self.embedding_dims)
-        self.table = self._open_or_create_table(schema)
+        self.table = self._open_or_create_table()
 
         if ensure_fts_index:
             self._ensure_fts_index()
 
-    @staticmethod
-    def _build_schema(embedding_dims: int):
-        class KnowledgeTableDocument(KnowledgeDocument, LanceModel):
-            vector: Vector(embedding_dims)
-
-        return KnowledgeTableDocument
-
-    def _open_or_create_table(self, schema):
+    def _open_or_create_table(self):
         try:
             return self.db.open_table(self.table_name)
         except Exception:
-            return self.db.create_table(self.table_name, schema=schema)
+            return self.db.create_table(self.table_name, schema=KnowledgeTableDocument)
 
     def _ensure_fts_index(self) -> None:
         try:
