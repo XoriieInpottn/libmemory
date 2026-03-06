@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import yaml
 import os
 import time
 from typing import Any
@@ -399,13 +400,18 @@ class DocumentStore:
 
 def test():
     # 从配置文件加载 LLMConfig（避免在代码中硬编码敏感信息）
-    config_path = "./config.json"
+    config_path = "./config.yaml"
     if not os.path.exists(config_path):
         print(f"未找到配置文件 '{config_path}'，请确保该文件存在。")
         return
 
     with open(config_path, "r", encoding="utf-8") as f:
-        cfg = json.load(f)
+        full_cfg = yaml.safe_load(f)
+        cfg = full_cfg.get("embedding_url")
+
+    if not cfg:
+        print("配置文件中未找到 'embedding_url' 配置项。")
+        return
 
     # LLMConfig 是 Pydantic 模型，可以使用 model_validate 进行验证加载
     try:

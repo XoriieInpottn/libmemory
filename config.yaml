@@ -1,0 +1,4 @@
+embedding_url:
+  base_url: "https://api.zhizengzeng.com/v1"
+  api_key: "zk-08507a246a7f1fc844185def5ae9ef2b"
+  model: "text-embedding-3-small"

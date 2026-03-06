@@ -1,6 +1,6 @@
 import os
 import sys
-import json
+import yaml
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
@@ -20,14 +20,18 @@ templates = Jinja2Templates(directory=templates_dir)
 def get_store():
     # 路径基于项目根目录
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    config_path = os.path.join(base_dir, "config.json")
+    config_path = os.path.join(base_dir, "config.yaml")
     db_path = os.path.join(base_dir, "data", "document_db")
     
     if not os.path.exists(config_path):
         raise RuntimeError(f"Config file not found at {config_path}")
     
     with open(config_path, "r", encoding="utf-8") as f:
-        cfg = json.load(f)
+        full_cfg = yaml.safe_load(f)
+        cfg = full_cfg.get("embedding_url")
+    
+    if not cfg:
+        raise RuntimeError("Config file does not contain 'embedding_url'")
     
     config = LLMConfig.model_validate(cfg)
     return DocumentStore(
